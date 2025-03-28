@@ -42,12 +42,12 @@ def start(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📜 Guide", callback_data='show_guide')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Welcome to CryptoGuardBot! Please select an option:", reply_markup=reply_markup)
+    update.message.reply_text("Welcome to KryptoMaxBot! Please select an option:", reply_markup=reply_markup)
 
 # === Guide ===
 def guide(update: Update, context: CallbackContext):
     guide_text = """
-📜 *CryptoGuard Guide* 🚡
+📜 *KryptoMax Guide* 🚡
 
 1. /start – Begin
 2. Choose BTC or ETH
